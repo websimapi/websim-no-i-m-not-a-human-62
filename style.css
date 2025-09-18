@@ -1,0 +1,728 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Roboto', sans-serif;
+    color: #ccc;
+    background-color: #020502;
+    overflow: hidden;
+    min-height: 100dvh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-image: linear-gradient(rgba(0,0,0,0.85), rgba(0,0,0,0.85)), url('background.png');
+    background-size: cover;
+    background-position: center;
+}
+
+.static-overlay {
+    display: none; /* No longer needed */
+}
+
+@keyframes static-move {
+    0% { transform: translateX(0) translateY(0); }
+    10% { transform: translateX(-5px) translateY(5px); }
+    20% { transform: translateX(5px) translateY(-5px); }
+    30% { transform: translateX(-7px) translateY(7px); }
+    40% { transform: translateX(7px) translateY(-7px); }
+    50% { transform: translateX(-5px) translateY(-10px); }
+    60% { transform: translateX(5px) translateY(10px); }
+    70% { transform: translateX(-10px) translateY(5px); }
+    80% { transform: translateX(10px) translateY(-5px); }
+    90% { transform: translateX(-7px) translateY(-7px); }
+    100% { transform: translateX(7px) translateY(7px); }
+}
+
+.static-overlay.active {
+    opacity: 0.1;
+    background-image: url(static_noise.png);
+    animation: static-move 75ms linear infinite;
+}
+
+.green-filter {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 180, 0, 0.15);
+    mix-blend-mode: screen;
+    pointer-events: none;
+    z-index: 100;
+}
+
+.background-drip {
+    position: fixed;
+    inset: 0;
+    background-image: linear-gradient(rgba(0,0,0,0.85), rgba(0,0,0,0.85)), url('background.png');
+    background-size: cover; background-position: center;
+    filter: url(#drip-displace);
+    clip-path: inset(70% 0 0 0);
+    pointer-events: none; z-index: 0;
+}
+
+#app {
+    width: 100vw;
+    height: 100dvh;
+    display: grid;
+    grid-template-columns: 1fr 2fr 1fr;
+    grid-template-rows: 1fr;
+    gap: 2vmin;
+    padding: 2vmin;
+    position: relative;
+    z-index: 2;
+}
+
+.center-content {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    overflow: hidden;
+}
+
+header {
+    text-align: center;
+    position: relative;
+    padding-bottom: 1vmin;
+    flex-shrink: 0;
+    min-height: calc(clamp(2rem, 6vw, 4rem) + 1vmin); /* Reserve space for h1 */
+}
+
+h1 {
+    font-family: 'Creepster', cursive;
+    font-size: clamp(2rem, 6vw, 4rem);
+    letter-spacing: 0.2rem;
+    text-shadow: 2px 2px 8px rgba(0, 0, 0, 0.7);
+    color: #ddd;
+}
+
+h1 .bounce-comma { display:inline-block; animation: commaBounce 2.6s ease-in-out infinite; }
+
+.credits-btn {
+    position: fixed; top: 0.5rem; right: 0.5rem;
+    width: 28px; height: 28px; display: grid; place-items: center;
+    background: rgba(204,204,204,0.08); border: 1px solid #ccc; color: #ccc;
+    border-radius: 50%; font-size: 0.85rem; line-height: 1; text-decoration: none; z-index: 150;
+    overflow: hidden; /* For pseudo-element */
+}
+
+.credits-btn:hover {
+    background-color: #ccc;
+    color: #000;
+}
+
+.credits-btn:hover::after { opacity: 1; transform: translateY(0); }
+
+.credits-btn::after {
+    content: attr(data-tooltip); position: absolute; top: 100%; right: 0;
+    background: rgba(0,0,0,0.9); border: 1px solid #ccc; color: #ccc;
+    padding: 0.4rem 0.6rem; font-size: 0.8rem; white-space: pre-line;
+    transform: translateY(6px); opacity: 0; pointer-events: none; transition: opacity 0.2s, transform 0.2s;
+}
+
+.content {
+    flex-grow: 1;
+    display: flex; /* Changed from grid */
+    align-items: center;
+    padding: 1vmin 0;
+    overflow: hidden;
+}
+
+.side-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5vmin;
+    height: 100%;
+    justify-content: flex-start;
+    overflow: hidden; /* hide overflow to show only 5 at a time */
+    padding-block: 1vmin;
+}
+
+.side-panel::-webkit-scrollbar {
+    width: 6px; height: 6px;
+}
+
+.side-panel::-webkit-scrollbar-thumb {
+    background: #333;
+}
+
+.panel-track {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5vmin;
+    height: 100%;
+    will-change: transform;
+}
+
+.side-panel.vertical-aspect .feature-box {
+    aspect-ratio: auto;
+}
+
+.feature-box {
+    border: 2px solid #666;
+    background-color: #000;
+    overflow: hidden;
+    aspect-ratio: auto;
+    height: calc((100% - (1.5vmin * 4)) / 5); /* exactly 5 visible rows */
+    flex: 0 0 auto;
+    transition: aspect-ratio 0.3s ease;
+}
+
+.feature-box img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    filter: grayscale(100%);
+}
+
+.center-panel {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    align-items: center;
+    height: 100%;
+    gap: 2vmin;
+    width: 100%; /* Ensure it takes full width of its container */
+}
+
+.figure-wrapper {
+    flex-grow: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    width: 100%;
+    min-height: 0;
+}
+
+.figure-container {
+    width: 90%;
+    max-width: 45vmin; /* Use vmin for better scaling on different aspect ratios */
+    height: auto;
+    aspect-ratio: 1 / 1;
+    position: relative;
+    margin: 0 auto;
+    overflow: visible;
+}
+
+.figure-container img {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    mask-image: linear-gradient(to bottom, black 80%, transparent 100%);
+    -webkit-mask-image: linear-gradient(to bottom, black 80%, transparent 100%);
+}
+
+.figure-container .drip-layer {
+    position: absolute;
+    inset: 0;
+    object-fit: contain;
+    filter: url(#drip-displace);
+    mask-image: linear-gradient(to bottom, transparent 0%, transparent 65%, black 85%, black 100%);
+    -webkit-mask-image: linear-gradient(to bottom, transparent 0%, transparent 65%, black 85%, black 100%);
+    pointer-events: none;
+    z-index: 0;
+}
+
+.center-bottom-container {
+    display: flex;
+    justify-content: center;
+    align-items: flex-end;
+    width: 100%;
+    gap: 2vmin;
+    position: relative;
+    flex-wrap: wrap;
+    padding-bottom: 2vmin; /* Add padding to prevent clipping */
+}
+
+footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    padding-top: 1vmin;
+    flex-shrink: 0;
+    height: 0; /* Footer is now empty */
+    min-height: 0;
+    padding: 0;
+}
+
+.menu {
+    display: flex;
+    gap: 1rem;
+    flex-wrap: wrap;
+    flex-shrink: 0; /* Prevent menu from shrinking when space is tight */
+}
+
+.menu button {
+    font-family: 'Roboto', sans-serif;
+    font-size: clamp(0.8rem, 2vmin, 1rem);
+    padding: 0.5em 1.2em;
+    background-color: transparent;
+    border: 2px solid #ccc;
+    color: #ccc;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    white-space: nowrap;
+    position: relative; /* For pseudo-element */
+    overflow: hidden; /* For pseudo-element */
+    isolation: isolate; /* Create a new stacking context */
+}
+
+.menu button:hover:not(:disabled) {
+    background-color: #ccc;
+    color: #000;
+    box-shadow: 0 0 10px #ccc;
+}
+
+.menu button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.collectibles-container {
+    position: relative;
+    width: 12vmin;
+    height: 9vmin;
+    min-width: 60px;
+    min-height: 45px;
+    flex-shrink: 0; /* Prevent container from shrinking */
+    display: flex;
+    justify-content: flex-end;
+}
+
+.card {
+    position: absolute;
+    width: 60%;
+    height: auto;
+    aspect-ratio: 3 / 4;
+    border: 2px solid #ccc;
+    box-shadow: 3px 3px 10px rgba(0, 0, 0, 0.5);
+    transition: transform 0.3s ease;
+}
+
+.card:hover {
+    transform: translateY(-10px) rotate(var(--rotation, 0deg)) !important;
+    z-index: 10;
+}
+
+.card1 {
+    transform: rotate(-15deg);
+    left: 0%;
+    bottom: 0%;
+    --rotation: -15deg;
+    z-index: 3;
+}
+
+.card2 {
+    transform: rotate(5deg);
+    left: 25%;
+    bottom: 5%;
+    z-index: 4;
+    --rotation: 5deg;
+}
+
+.card3 {
+    transform: rotate(20deg);
+    left: 50%;
+    bottom: 0%;
+    z-index: 3;
+    --rotation: 20deg;
+}
+
+.fog-overlay { display: none !important; }
+
+.fog-overlay.left {
+    left: 0;
+}
+
+.fog-overlay.right {
+    right: 0;
+}
+
+.fog-overlay::before,
+.fog-overlay::after {
+    content: "";
+    position: absolute;
+    inset: -12%;
+    pointer-events: none;
+    background:
+        radial-gradient(100% 60% at 30% 20%, rgba(255,255,255,0.16) 0%, rgba(255,255,255,0.08) 40%, rgba(255,255,255,0) 70%) ,
+        radial-gradient(90% 55% at 70% 60%, rgba(255,255,255,0.14) 0%, rgba(255,255,255,0.06) 45%, rgba(255,255,255,0) 75%);
+    filter: url(#fog-noise) blur(2px);
+    opacity: 0.7;
+    mix-blend-mode: screen;
+}
+
+.fog-overlay::before { animation: fogDriftA 18s ease-in-out infinite alternate; }
+
+.fog-overlay::after  { animation: fogDriftB 26s ease-in-out infinite alternate; opacity: 0.5; }
+
+@keyframes fogDriftA {
+  0%   { transform: translate3d(0,0,0) scale(1.0); }
+  50%  { transform: translate3d(2%, -1%, 0) scale(1.05); }
+  100% { transform: translate3d(-3%, 2%, 0) scale(1.08); }
+}
+
+@keyframes fogDriftB {
+  0%   { transform: translate3d(0,0,0) scale(1.0) rotate(0.2deg); }
+  50%  { transform: translate3d(-2%, 1.5%, 0) scale(1.06) rotate(-0.2deg); }
+  100% { transform: translate3d(3%, -1%, 0) scale(1.1) rotate(0.4deg); }
+}
+
+@keyframes continuousDriveZoomAndBounce {
+  0%   { transform: scale(1) translateY(0); }
+  28%  { transform: scale(1.05) translateY(0.4vh); }
+  65%  { transform: scale(1.1) translateY(-0.25vh); }
+  85%  { transform: scale(1.15) translateY(0.1vh); }
+  100% { transform: scale(1.2) translateY(0); }
+}
+
+@keyframes roadBounce {
+  0%   { transform: translateY(0); }
+  28%  { transform: translateY(0.4vh); }
+  65%  { transform: translateY(-0.25vh); }
+  85%  { transform: translateY(0.1vh); }
+  100% { transform: translateY(0); }
+}
+
+@keyframes gateZoom {
+  from { transform: scale(1); }
+  to { transform: scale(1.15); }
+}
+
+@keyframes driveZoom {
+  0% { transform: scale(1); }
+  55% { transform: scale(1.1); }
+  72% { transform: scale(1.075); }
+  88% { transform: scale(1.095); }
+  100% { transform: scale(1.08); }
+}
+
+.ui-overlay.revealing .fog-overlay.left {
+    transform: translateX(-100%);
+}
+
+.ui-overlay.revealing .fog-overlay.right {
+    transform: translateX(100%);
+}
+
+.ui-overlay.revealing #fog-canvas,
+.ui-overlay.fade-out #fog-canvas { opacity: 0; }
+
+.ui-overlay {
+    position: fixed;
+    inset: 0;
+    background: transparent;
+    display: flex;
+    z-index: 10001; /* was 300, ensure it's above #loading-overlay (9999) */
+    transition: opacity 0.6s ease;
+    opacity: 1;
+    pointer-events: none; /* Allow interaction with elements below if needed, children will override */
+}
+
+.ui-overlay.fade-out {
+    opacity: 0;
+    /* pointer-events: none; This is now handled by JS */
+}
+
+.overlay-inner {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    pointer-events: auto; /* Allow clicks within the inner container */
+    padding: 2vmin;
+    position: relative; /* Ensure it's on top of the fog */
+    z-index: 2;
+}
+
+#overlay-prompt {
+    flex-grow: 0;
+    padding-top: 2rem;
+}
+
+.type-line {
+    font-family: 'Creepster', cursive;
+    font-size: clamp(2rem, 6vmin, 3.2rem);
+    color: #ccc;
+    transition: opacity 0.6s ease;
+}
+
+.type-line.fade { opacity: 0; }
+
+.overlay-btn {
+    padding: 0.5em 1.2em;
+    background: transparent;
+    border: 2px solid #ccc;
+    color: #ccc;
+    cursor: pointer;
+    position: relative; /* For pseudo-element */
+    overflow: hidden; /* For pseudo-element */
+    margin-top: 1.5rem;
+}
+
+.overlay-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.menu button::before,
+.credits-btn::before,
+.overlay-btn::before {
+    content: '';
+    position: absolute;
+    top: -10%; left: -10%;
+    width: 120%; height: 120%;
+    pointer-events: none;
+    z-index: -1; /* Position behind the text */
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    will-change: transform;
+    background-image: url(static_noise.png);
+    background-color: rgba(0, 180, 0, 0.4);
+    background-blend-mode: screen;
+}
+
+.menu button.static-bg-active::before,
+.credits-btn.static-bg-active::before,
+.overlay-btn.static-bg-active::before {
+    opacity: 1;
+    animation: static-move 75ms linear infinite;
+}
+
+#loading-overlay {
+    position: fixed;
+    inset: 0;
+    background-color: #000;
+    z-index: 9999;
+    display: grid;
+    place-items: center;
+    transition: opacity 1s ease-out;
+    opacity: 1;
+}
+
+#loading-overlay.hidden {
+    opacity: 0;
+    pointer-events: none;
+}
+
+.loader {
+    width: 50px;
+    height: 50px;
+    border: 3px solid #333;
+    border-top-color: #ccc;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+@keyframes commaBounce { 0%,100%{ transform: translateY(0) } 50%{ transform: translateY(-6px) } }
+
+h1 .not-word { color:#f33; transition: color 1.5s ease; }
+
+h1 .not-word.pulse-red { animation: notPulse 1.2s ease; }
+
+@keyframes notPulse { 0%{ color:#f33 } 70%{ color:#ddd } 100%{ color:#ddd } }
+
+#fog-canvas {
+    position: fixed;
+    inset: 0;
+    background: #000;
+    display: block; /* Was none */
+    z-index: 10000; /* Under UI overlay, over loading screen */
+    height: 100dvh;
+    overflow: hidden; /* Prevent birds from showing outside the frame */
+    transition: background-color 1.5s ease;
+}
+
+#cutscene {
+    position: fixed;
+    inset: 0;
+    background: #000;
+    display: none;
+    z-index: 10002;
+    align-items: center;
+    justify-content: center;
+    height: 100dvh;
+    overflow: hidden; /* Hide anything that zooms past the viewport */
+}
+
+#cutscene-canvas-wrapper {
+    width: 100%;
+    height: 100%;
+    will-change: transform;
+    transform-origin: 50% 60%;
+}
+
+#cutscene-canvas-wrapper.gate-zoom { animation: gateZoom 18s ease-in-out forwards; }
+
+#cutscene-gif-wrapper {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    opacity: 0;
+    transition: opacity 2s ease-in-out;
+    will-change: transform;
+    transform-origin: center center;
+}
+
+#cutscene-gif-wrapper.reveal {
+    opacity: 1;
+}
+
+#cutscene-gif-wrapper img {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100dvh;
+    object-fit: cover;
+}
+
+#cutscene img, #cutscene canvas {
+    width: 100vw;
+    height: 100dvh;
+    object-fit: cover;
+    opacity: 0;
+    transition: opacity 2s ease-in-out; /* Default transition for fade in/out */
+    image-rendering: pixelated;
+    filter: contrast(1.15) saturate(1.05) brightness(0.98);
+}
+
+#cutscene #cutscene-gif-wrapper img { opacity: 1; transition: none; }
+
+#cutscene canvas.fade-in-long {
+    transition-duration: 9s; /* Slower fade-in for first scene */
+}
+
+#cutscene canvas {
+    position: absolute; /* Ensure canvas overlays the img for the effect */
+    top: 0;
+    left: 0;
+}
+
+#cutscene canvas.reveal {
+    opacity: 1;
+}
+
+#cutscene .cutscene-loading {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+}
+
+#cutscene::after {
+    content: "";
+    position: absolute; inset: 0;
+    pointer-events: none;
+    background: repeating-linear-gradient(to bottom, rgba(0,0,0,0.35) 0, rgba(0,0,0,0.35) 1px, transparent 2px, transparent 4px);
+    opacity: 0.12;
+    mix-blend-mode: multiply;
+    z-index: 2; /* Ensure it is above the canvas */
+}
+
+#cutscene canvas.drive-zoom {
+  transform-origin: 50% 50%; /* Center the bounce origin */
+  animation: roadBounce 4s linear infinite;
+  will-change: transform;
+}
+
+#bird-flock {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0; /* Behind canvas to be affected by the shader */
+    mix-blend-mode: multiply; /* Blend birds with the canvas content */
+    overflow: hidden; /* Hide birds before they are placed */
+}
+
+.bird {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 0.8vw;
+    height: 0.8vw;
+    max-width: 10px;
+    max-height: 10px;
+    background-image: url(bird_flap_sprite.png);
+    background-size: 400% 100%;
+    animation: flap 0.4s steps(4) infinite;
+    will-change: transform;
+    filter: contrast(1.1) brightness(0.6) blur(0.5px);
+    opacity: 0;
+    transition: opacity 7s ease-in-out;
+}
+
+@keyframes flap {
+  to { background-position: -400% 0; }
+}
+
+#scene-3d-container {
+    position: fixed;
+    inset: 0;
+    z-index: 10003;
+    background: #000;
+    display: none;
+    cursor: pointer;
+}
+
+#scene-3d-canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+}
+
+#scene-3d-instructions {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-family: 'Creepster', cursive;
+    font-size: 2rem;
+    text-shadow: 0 0 5px #000;
+    pointer-events: none;
+    opacity: 1;
+    transition: opacity 0.5s ease;
+}
+
+#scene-3d-instructions.hidden {
+    opacity: 0;
+}
+
+@media (max-width: 768px) and (orientation: portrait) {
+    #app {
+        grid-template-columns: 1fr 2.5fr 1fr; /* Give center more space on portrait */
+    }
+
+    .center-bottom-container {
+        flex-direction: column;
+        align-items: center;
+        gap: 4vmin;
+    }
+
+    .menu {
+        flex-direction: column;
+        align-items: stretch; /* make buttons same width */
+        width: 80%;
+        max-width: 300px;
+        order: 2; /* Move menu below cards */
+    }
+
+    .collectibles-container {
+        order: 1; /* Move cards above menu */
+        margin-bottom: 2vmin;
+    }
+}

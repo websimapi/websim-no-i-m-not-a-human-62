@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NO, I'M NOT A HUMAN</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Creepster&family=Roboto:wght@400;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://esm.sh/three@0.165.0",
+            "three/addons/": "https://esm.sh/three@0.165.0/examples/jsm/"
+        }
+    }
+    </script>
+    <div id="loading-overlay">
+        <div class="loader"></div>
+    </div>
+    <div id="static-overlay" class="static-overlay" aria-hidden="true"></div>
+    <!-- Drip displacement filter -->
+    <svg width="0" height="0" style="position:absolute">
+        <defs>
+            <filter id="drip-displace" x="-40%" y="-20%" width="180%" height="240%" filterUnits="objectBoundingBox" color-interpolation-filters="sRGB">
+                <feTurbulence type="fractalNoise" baseFrequency="0.006" numOctaves="3" seed="3" result="noise">
+                    <animate attributeName="baseFrequency" values="0.005;0.007;0.006;0.005" dur="7s" repeatCount="indefinite"/>
+                </feTurbulence>
+                <feColorMatrix in="noise" type="matrix" values="
+                    0 0 0 0 0.5
+                    0 1 0 0 0
+                    0 0 0 0 0
+                    0 0 0 1 0" result="biasG"/>
+                <feComponentTransfer in="biasG" result="downOnly">
+                    <feFuncG type="linear" slope="0.5" intercept="0.55"/>
+                </feComponentTransfer>
+                <feDisplacementMap in="SourceGraphic" in2="downOnly" scale="90" xChannelSelector="R" yChannelSelector="G" result="displaced"/>
+                <feMerge>
+                    <feMergeNode in="displaced"/>
+                </feMerge>
+            </filter>
+            <!-- New dynamic fog filter -->
+            <filter id="fog-noise" x="-50%" y="-50%" width="200%" height="200%" color-interpolation-filters="sRGB">
+                <feTurbulence type="fractalNoise" baseFrequency="0.012 0.02" numOctaves="3" seed="8" result="noise">
+                    <animate attributeName="baseFrequency" values="0.01 0.018;0.014 0.022;0.012 0.02" dur="14s" repeatCount="indefinite"/>
+                </feTurbulence>
+                <feTurbulence type="fractalNoise" baseFrequency="0.008 0.016" numOctaves="5" seed="13" result="noise2">
+                    <animate attributeName="baseFrequency" values="0.007 0.014;0.011 0.02;0.008 0.016" dur="18s" repeatCount="indefinite"/>
+                </feTurbulence>
+                <feBlend mode="screen" in="noise" in2="noise2" result="mix"/>
+                <feGaussianBlur in="mix" stdDeviation="0.8" result="softNoise"/>
+                <feDisplacementMap in="SourceGraphic" in2="softNoise" scale="28" xChannelSelector="R" yChannelSelector="G"/>
+            </filter>
+        </defs>
+    </svg>
+    <div class="background-drip" aria-hidden="true"></div>
+    <canvas id="fog-canvas" aria-hidden="true"></canvas>
+    <div class="green-filter"></div>
+    <div id="app">
+        <div class="side-panel left-panel">
+            <div class="feature-box"><img src="eye_fearful.png" alt="Fearful eye"></div>
+            <div class="feature-box"><img src="eye_suspicious.png" alt="Suspicious eye"></div>
+            <div class="feature-box"><img src="eye_vacant_dual.png" alt="Vacant eyes"></div>
+            <div class="feature-box"><img src="eye_intense.png" alt="Intense eye"></div>
+            <div class="feature-box"><img src="eye_lifeless.png" alt="Lifeless eye"></div>
+            <div class="feature-box"><img src="eye_ghost_dual.png" alt="Ghost pupil dual eyes"></div>
+            <div class="feature-box"><img src="eye_shattered_dual.png" alt="Shattered iris dual eyes"></div>
+            <div class="feature-box"><img src="eye_wet_dual.png" alt="Wet reflective dual eyes"></div>
+            <div class="feature-box"><img src="eye_veined_dual.png" alt="Veined dual eyes"></div>
+            <div class="feature-box"><img src="eye_frenzy_dual.png" alt="Frenzied dual eyes"></div>
+        </div>
+
+        <div class="center-content">
+            <header>
+                <h1 id="main-title" aria-label="NO, I'M NOT A HUMAN">&nbsp;</h1>
+            </header>
+            <main class="content">
+                <div class="center-panel">
+                    <div class="figure-wrapper">
+                        <div class="figure-container">
+                            <img src="humanoid_figure.png" alt="Distorted humanoid figure">
+                            <img src="humanoid_figure.png" alt="" aria-hidden="true" class="drip-layer">
+                        </div>
+                    </div>
+                    <div class="center-bottom-container">
+                        <nav class="menu">
+                            <button>New Game</button>
+                            <button disabled>Continue</button>
+                            <button>Settings</button>
+                            <button>Collection</button>
+                            <button>Quit</button>
+                        </nav>
+                        <div class="collectibles-container">
+                            <img src="collectible_card_1.png" alt="Collectible Card 1" class="card card1">
+                            <img src="collectible_card_2.png" alt="Collectible Card 2" class="card card2">
+                            <img src="collectible_card_3.png" alt="Collectible Card 3" class="card card3">
+                        </div>
+                    </div>
+                </div>
+            </main>
+            <footer>
+            </footer>
+        </div>
+        
+        <div class="side-panel right-panel">
+            <div class="feature-box"><img src="mouth_grin.png" alt="Grinning mouth"></div>
+            <div class="feature-box"><img src="mouth_neutral.png" alt="Neutral mouth"></div>
+            <div class="feature-box"><img src="mouth_speech.png" alt="Mouth mid-speech"></div>
+            <div class="feature-box"><img src="mouth_tense.png" alt="Tense mouth"></div>
+            <div class="feature-box"><img src="mouth_open.png" alt="Open mouth"></div>
+            <div class="feature-box"><img src="mouth_snarl.png" alt="Snarling mouth"></div>
+            <div class="feature-box"><img src="mouth_smirk.png" alt="Smirking mouth"></div>
+            <div class="feature-box"><img src="mouth_shiver.png" alt="Shivering mouth"></div>
+            <div class="feature-box"><img src="mouth_hiss.png" alt="Hissing mouth"></div>
+            <div class="feature-box"><img src="mouth_grit.png" alt="Teeth-grit mouth"></div>
+        </div>
+    </div>
+    <a href="https://store.steampowered.com/app/3180070/No_Im_not_a_Human/" target="_blank" class="credits-btn" aria-label="Original Inspired By — Trioskaz' No, I'm Not A Human" data-tooltip="Original Inspired By&#10;Trioskaz' No, I'm Not A Human">!</a>
+    <script type="module" src="script.js"></script>
+    <button id="audio-unlock" class="audio-unlock" hidden>Enable Audio</button>
+    <div class="ui-overlay" id="ui-overlay" aria-modal="true" role="dialog">
+        <div class="overlay-inner">
+            <p id="overlay-prompt" class="type-line" aria-live="polite"></p>
+            <button id="overlay-yes" class="overlay-btn" disabled>Yes...</button>
+        </div>
+    </div>
+    <div id="cutscene" aria-hidden="true">
+        <div class="cutscene-loading"><div class="loader"></div></div>
+        <div id="cutscene-canvas-wrapper">
+            <canvas id="cutscene-canvas"></canvas>
+        </div>
+        <div id="cutscene-gif-wrapper"></div>
+        <div id="bird-flock"></div>
+    </div>
+    <div id="scene-3d-container" aria-hidden="true">
+        <canvas id="scene-3d-canvas"></canvas>
+        <div id="scene-3d-instructions">
+            <div>Click to look around</div>
+        </div>
+    </div>
+<script defer src="https://static.cloudflareinsights.com/beacon.min.js/v8c78df7c7c0f484497ecbca7046644da1771523124516" integrity="sha512-8DS7rgIrAmghBFwoOTujcf6D9rXvH8xm8JQ1Ja01h9QX8EzXldiszufYa4IFfKdLUKTTrnSFXLDkUEOTrZQ8Qg==" data-cf-beacon='{"version":"2024.11.0","token":"4c6229722a6346bc8eb5cb0e5eae5d41","server_timing":{"name":{"cfCacheStatus":true,"cfEdge":true,"cfExtPri":true,"cfL4":true,"cfOrigin":true,"cfSpeedBrain":true},"location_startswith":null}}' crossorigin="anonymous"></script>
+</body>
+</html>

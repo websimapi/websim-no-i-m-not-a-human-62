@@ -1,0 +1,35 @@
+--- a/script.js
++++ b/script.js
+@@ -231,14 +231,19 @@
+         }, { once: true });
+     }
+ 
+-    function playSound(buffer) {
++    function playSound(buffer, volume = 1.0) {
+         if (!audioUnlocked || !buffer) return;
+         
+         try {
+             const source = audioCtx.createBufferSource();
+             source.buffer = buffer;
+-            source.connect(audioCtx.destination);
++
++            const gainNode = audioCtx.createGain();
++            gainNode.gain.value = volume;
++
++            source.connect(gainNode);
++            gainNode.connect(audioCtx.destination);
++
+             source.start(0);
+         } catch (e) {
+             console.error("Could not play sound:", e);
+@@ -262,7 +267,7 @@
+         buttons.forEach(button => {
+             button.addEventListener('mouseenter', () => {
+                 if (!button.disabled) {
+-                    playSound(uiHoverBuffer);
++                    playSound(uiHoverBuffer, 0.5);
+                 }
+             });
+         });
+
+
