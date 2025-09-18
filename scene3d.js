@@ -196,8 +196,10 @@ function animate() {
                 isMovingToTarget = false; // Stop if obstacle is too close
             } else {
                 // Smoothly rotate player to face the target direction
-                const targetAngle = Math.atan2(directionToTarget.x, directionToTarget.z);
-                const targetQuaternion = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), targetAngle);
+                const lookAtTarget = new THREE.Vector3(targetPosition.x, player.position.y, targetPosition.z);
+                const targetQuaternion = new THREE.Quaternion().setFromRotationMatrix(
+                    new THREE.Matrix4().lookAt(player.position, lookAtTarget, player.up)
+                );
                 player.quaternion.slerp(targetQuaternion, delta * 5.0);
 
                 // Move forward
