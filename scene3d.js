@@ -113,17 +113,24 @@ function onTouchEnd(event) {
         const intersects = raycaster.intersectObjects(walkableObjects);
 
         if (intersects.length > 0) {
-            targetPosition = intersects[0].point;
-            isMovingToTarget = true;
-            
-            // Show tap indicator
-            tapIndicator.position.copy(targetPosition);
-            tapIndicator.position.y += 0.05; // Prevent z-fighting
-            tapIndicator.visible = true;
-            if (indicatorTimeout) clearTimeout(indicatorTimeout);
-            indicatorTimeout = setTimeout(() => {
-                tapIndicator.visible = false;
-            }, 500);
+            const intersectionPoint = intersects[0].point;
+            const player = controls.getObject();
+
+            // FIX: Only set a new target if it's a meaningful distance away
+            // This prevents spinning when tapping near the player's current position.
+            if (player.position.distanceTo(intersectionPoint) > 0.6) {
+                targetPosition = intersectionPoint;
+                isMovingToTarget = true;
+                
+                // Show tap indicator
+                tapIndicator.position.copy(targetPosition);
+                tapIndicator.position.y += 0.05; // Prevent z-fighting
+                tapIndicator.visible = true;
+                if (indicatorTimeout) clearTimeout(indicatorTimeout);
+                indicatorTimeout = setTimeout(() => {
+                    tapIndicator.visible = false;
+                }, 500);
+            }
         }
     }
     isDragging = false;
