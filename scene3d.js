@@ -22,6 +22,16 @@ const PI_2 = Math.PI / 2;
 
 const isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
 
+// Tap-to-move state
+let raycaster;
+let walkableObjects = [];
+let collisionObjects = [];
+let targetPosition = null;
+let isMovingToTarget = false;
+let tapIndicator;
+let indicatorTimeout;
+let collisionRaycaster;
+
 function setupEventListeners() {
     if (isMobile) {
         instructions.querySelector('div').textContent = 'Tap to move, Drag to look';
@@ -92,9 +102,29 @@ function onTouchEnd(event) {
     event.preventDefault();
     if (!controls) return;
     const touchDuration = performance.now() - touchStartTime;
-    if (!isDragging && touchDuration < 200) {
-        // It's a tap
-        moveForward = !moveForward;
+    if (!isDragging && touchDuration < 250) {
+        // It's a tap - use raycaster to set destination
+        const touch = event.changedTouches[0];
+        const mouse = new THREE.Vector2();
+        mouse.x = (touch.clientX / window.innerWidth) * 2 - 1;
+        mouse.y = - (touch.clientY / window.innerHeight) * 2 + 1;
+
+        raycaster.setFromCamera(mouse, camera);
+        const intersects = raycaster.intersectObjects(walkableObjects);
+
+        if (intersects.length > 0) {
+            targetPosition = intersects[0].point;
+            isMovingToTarget = true;
+            
+            // Show tap indicator
+            tapIndicator.position.copy(targetPosition);
+            tapIndicator.position.y += 0.05; // Prevent z-fighting
+            tapIndicator.visible = true;
+            if (indicatorTimeout) clearTimeout(indicatorTimeout);
+            indicatorTimeout = setTimeout(() => {
+                tapIndicator.visible = false;
+            }, 500);
+        }
     }
     isDragging = false;
 }
@@ -146,23 +176,53 @@ function animate() {
 
     const time = performance.now();
     const delta = (time - prevTime) / 1000;
+    const player = controls.getObject();
 
-    velocity.x -= velocity.x * 10.0 * delta;
-    velocity.z -= velocity.z * 10.0 * delta;
+    if (isMobile && isMovingToTarget && targetPosition) {
+        const distance = player.position.distanceTo(targetPosition);
 
-    direction.z = Number(moveForward) - Number(moveBackward);
-    direction.x = Number(moveRight) - Number(moveLeft);
-    direction.normalize(); 
+        if (distance < 0.5) { // Close enough to target
+            isMovingToTarget = false;
+        } else {
+            const directionToTarget = targetPosition.clone().sub(player.position);
+            directionToTarget.y = 0; // Move along XZ plane
+            directionToTarget.normalize();
+            
+            // Collision detection
+            collisionRaycaster.set(player.position, directionToTarget);
+            const collisions = collisionRaycaster.intersectObjects(collisionObjects, true);
+            
+            if (collisions.length > 0 && collisions[0].distance < 1.0) {
+                isMovingToTarget = false; // Stop if obstacle is too close
+            } else {
+                // Smoothly rotate player to face the target direction
+                const targetAngle = Math.atan2(directionToTarget.x, directionToTarget.z);
+                const targetQuaternion = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), targetAngle);
+                player.quaternion.slerp(targetQuaternion, delta * 5.0);
 
-    if (moveForward || moveBackward) velocity.z -= direction.z * 40.0 * delta;
-    if (moveLeft || moveRight) velocity.x -= direction.x * 40.0 * delta;
+                // Move forward
+                const moveSpeed = 4.0;
+                controls.moveForward(moveSpeed * delta);
+            }
+        }
+    } else if (!isMobile) { // Desktop controls
+        velocity.x -= velocity.x * 10.0 * delta;
+        velocity.z -= velocity.z * 10.0 * delta;
 
-    if (controls) {
+        direction.z = Number(moveForward) - Number(moveBackward);
+        direction.x = Number(moveRight) - Number(moveLeft);
+        direction.normalize(); 
+
+        if (moveForward || moveBackward) velocity.z -= direction.z * 40.0 * delta;
+        if (moveLeft || moveRight) velocity.x -= direction.x * 40.0 * delta;
+
         controls.moveRight(-velocity.x * delta);
         controls.moveForward(-velocity.z * delta);
-        
-        // prevent flying up/down
-        controls.getObject().position.y = 1.7; 
+    }
+    
+    // prevent flying up/down
+    if (controls) {
+        player.position.y = 1.7; 
     }
 
     prevTime = time;
@@ -205,7 +265,10 @@ class MobileControls {
         return this.playerObject;
     }
     moveForward(distance) {
-        this.playerObject.translateZ(-distance);
+        // This moves the object along its local Z axis
+        const forward = new THREE.Vector3(0, 0, -1);
+        forward.applyQuaternion(this.playerObject.quaternion);
+        this.playerObject.position.add(forward.multiplyScalar(distance));
     }
     moveRight(distance) {
         this.playerObject.translateX(distance);
@@ -229,6 +292,9 @@ export function initScene3D() {
         controls = new MobileControls(camera);
         controls.getObject().position.set(0, 1.7, 5);
         if (instructions) instructions.classList.remove('hidden');
+        // Initialize raycasters for tap-to-move
+        raycaster = new THREE.Raycaster();
+        collisionRaycaster = new THREE.Raycaster();
     } else {
         controls = new DesktopControls(camera, document.body);
         camera.position.y = 1.7; // set initial height for camera inside PLC object
@@ -280,6 +346,7 @@ export function initScene3D() {
     ground.rotation.x = -Math.PI / 2;
     ground.receiveShadow = true;
     scene.add(ground);
+    walkableObjects.push(ground);
 
     // Barn
     const barnGroup = new THREE.Group();
@@ -411,6 +478,17 @@ export function initScene3D() {
 
     barnGroup.position.z = -15;
     scene.add(barnGroup);
+    collisionObjects.push(barnGroup);
+
+    // Tap indicator for mobile
+    if (isMobile) {
+        const indicatorGeometry = new THREE.RingGeometry(0.3, 0.4, 32);
+        indicatorGeometry.rotateX(-Math.PI / 2);
+        const indicatorMaterial = new THREE.MeshBasicMaterial({ color: 0xcccccc, transparent: true, opacity: 0.8 });
+        tapIndicator = new THREE.Mesh(indicatorGeometry, indicatorMaterial);
+        tapIndicator.visible = false;
+        scene.add(tapIndicator);
+    }
 
     // Start
     setupEventListeners();
