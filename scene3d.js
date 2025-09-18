@@ -60,6 +60,7 @@ function removeEventListeners() {
 
 function onTouchStart(event) {
     event.preventDefault();
+    if (!controls) return;
     const touch = event.touches[0];
     touchStartX = touch.clientX;
     touchStartY = touch.clientY;
@@ -69,7 +70,7 @@ function onTouchStart(event) {
 
 function onTouchMove(event) {
     event.preventDefault();
-    if (event.touches.length === 0) return;
+    if (!controls || event.touches.length === 0) return;
     isDragging = true;
     const touch = event.touches[0];
     const deltaX = touch.clientX - touchStartX;
@@ -89,6 +90,7 @@ function onTouchMove(event) {
 
 function onTouchEnd(event) {
     event.preventDefault();
+    if (!controls) return;
     const touchDuration = performance.now() - touchStartTime;
     if (!isDragging && touchDuration < 200) {
         // It's a tap
