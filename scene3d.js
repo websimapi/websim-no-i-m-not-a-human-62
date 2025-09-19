@@ -26,6 +26,7 @@ let raycaster;
 let walkableObjects = [];
 let targetPosition = null;
 let isMovingToTarget = false;
+let moveIndicator = null;
 
 function setupEventListeners() {
     if (isMobile) {
@@ -113,9 +114,15 @@ function onTouchEnd(event) {
         const intersects = raycaster.intersectObjects(walkableObjects);
         
         if (intersects.length > 0) {
-            targetPosition = intersects[0].point.clone();
-            targetPosition.y = 1.7; // Keep on ground level
+            const hit = intersects[0];
+            targetPosition = hit.point.clone();
+            targetPosition.y = 1.7;
             isMovingToTarget = true;
+            if (moveIndicator) {
+                moveIndicator.position.set(hit.point.x, 0.02, hit.point.z);
+                moveIndicator.visible = true;
+                moveIndicator.scale.set(1,1,1);
+            }
         }
     }
     
@@ -173,11 +180,17 @@ function animate() {
 
     if (isMobile && isMovingToTarget && targetPosition) {
         const distance = player.position.distanceTo(targetPosition);
+        if (moveIndicator && moveIndicator.visible) {
+            const t = time * 0.004;
+            const pulse = 1 + Math.sin(t * Math.PI * 2) * 0.15;
+            moveIndicator.scale.setScalar(THREE.MathUtils.clamp(distance * 0.12, 0.6, 2.2) * pulse);
+        }
         
         if (distance < 0.3) {
             // Reached target
             isMovingToTarget = false;
             targetPosition = null;
+            if (moveIndicator) moveIndicator.visible = false;
         } else {
             // Move towards target
             const direction = targetPosition.clone().sub(player.position).normalize();
@@ -192,9 +205,9 @@ function animate() {
             if (distanceToBarn > 8) { // Stay at least 8 units from barn center
                 player.position.copy(newPosition);
             } else {
-                // Stop movement if too close to barn
                 isMovingToTarget = false;
                 targetPosition = null;
+                if (moveIndicator) moveIndicator.visible = false;
             }
         }
     } else if (!isMobile) {
@@ -334,6 +347,14 @@ export function initScene3D() {
     ground.receiveShadow = true;
     scene.add(ground);
     walkableObjects.push(ground);
+
+    const ringGeo = new THREE.RingGeometry(0.25, 0.5, 48);
+    const ringMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.6, depthWrite: false, side: THREE.DoubleSide });
+    moveIndicator = new THREE.Mesh(ringGeo, ringMat);
+    moveIndicator.rotation.x = -Math.PI / 2;
+    moveIndicator.position.y = 0.02;
+    moveIndicator.visible = false;
+    scene.add(moveIndicator);
 
     // Barn
     const barnGroup = new THREE.Group();
