@@ -130,6 +130,9 @@ function onTouchEnd(event) {
                 indicatorTimeout = setTimeout(() => {
                     tapIndicator.visible = false;
                 }, 500);
+            } else {
+                // If tap is too close, stop moving.
+                isMovingToTarget = false;
             }
         }
     }
@@ -178,6 +181,30 @@ function onKeyUp(event) {
     }
 }
 
+function checkCollision(player, direction) {
+    const playerPosition = player.position;
+    const right = new THREE.Vector3().crossVectors(player.up, direction).normalize();
+    const playerWidth = 0.4; // The radius of our character collision shape
+    const collisionDistance = 0.6; // How close we can get to a wall
+
+    const rayOrigins = [
+        playerPosition, // Center
+        playerPosition.clone().add(right.clone().multiplyScalar(playerWidth)),  // Right shoulder
+        playerPosition.clone().add(right.clone().multiplyScalar(-playerWidth)), // Left shoulder
+    ];
+
+    for (const origin of rayOrigins) {
+        collisionRaycaster.set(origin, direction);
+        const collisions = collisionRaycaster.intersectObjects(collisionObjects, true);
+
+        if (collisions.length > 0 && collisions[0].distance < collisionDistance) {
+            return true; // Collision detected
+        }
+    }
+
+    return false; // No collision
+}
+
 function animate() {
     animationFrameId = requestAnimationFrame(animate);
 
@@ -195,18 +222,18 @@ function animate() {
             directionToTarget.y = 0; // Move along XZ plane
             directionToTarget.normalize();
             
-            // Collision detection
-            collisionRaycaster.set(player.position, directionToTarget);
-            const collisions = collisionRaycaster.intersectObjects(collisionObjects, true);
-            
-            if (collisions.length > 0 && collisions[0].distance < 1.0) {
-                isMovingToTarget = false; // Stop if obstacle is too close
+            // New collision detection logic
+            if (checkCollision(player, directionToTarget)) {
+                isMovingToTarget = false; // Stop if an obstacle is too close
             } else {
                 // Smoothly rotate player to face the target direction
                 const lookAtTarget = new THREE.Vector3(targetPosition.x, player.position.y, targetPosition.z);
-                const targetQuaternion = new THREE.Quaternion().setFromRotationMatrix(
-                    new THREE.Matrix4().lookAt(player.position, lookAtTarget, player.up)
-                );
+                // Create a matrix that looks at the target
+                const m = new THREE.Matrix4();
+                m.lookAt(player.position, lookAtTarget, player.up);
+                // Create a quaternion from that matrix
+                const targetQuaternion = new THREE.Quaternion().setFromRotationMatrix(m);
+                // Slerp to the target quaternion
                 player.quaternion.slerp(targetQuaternion, delta * 5.0);
 
                 // Move forward
