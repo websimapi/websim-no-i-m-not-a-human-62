@@ -210,8 +210,14 @@ function animate() {
         if (distance < 0.5) { // Close enough to target
             isMovingToTarget = false;
         } else {
-            const moveSpeed = 4.0;
-            const moveDistance = moveSpeed * delta;
+            // Decelerate as we get closer to the target to prevent overshooting.
+            const maxSpeed = 4.0;
+            const decelerationDistance = 2.0;
+            const moveSpeed = distance < decelerationDistance 
+                ? maxSpeed * (distance / decelerationDistance) 
+                : maxSpeed;
+            
+            const moveDistance = Math.max(0.1, moveSpeed) * delta; // Ensure a minimum speed to prevent getting stuck
             
             // Calculate potential next position
             const directionToTarget = targetPosition.clone().sub(player.position).normalize();
@@ -226,7 +232,8 @@ function animate() {
                 const targetQuaternion = new THREE.Quaternion().setFromRotationMatrix(
                     new THREE.Matrix4().lookAt(player.position, lookAtTarget, player.up)
                 );
-                player.quaternion.slerp(targetQuaternion, delta * 5.0);
+                // Increase turn speed to converge on the target more quickly.
+                player.quaternion.slerp(targetQuaternion, delta * 10.0);
                 controls.moveForward(moveDistance);
             } else {
                 // Collision detected, stop moving towards the target
