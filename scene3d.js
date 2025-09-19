@@ -80,7 +80,7 @@ function onTouchMove(event) {
     const deltaY = touch.clientY - touchStartY;
     
     // Mark as dragging if movement is significant
-    if (Math.abs(deltaX) > 5 || Math.abs(deltaY) > 5) {
+    if (Math.abs(deltaX) > 3 || Math.abs(deltaY) > 3) {
         isDragging = true;
     }
     
@@ -89,8 +89,8 @@ function onTouchMove(event) {
         euler.setFromQuaternion(playerObject.quaternion);
         
         // Standard camera rotation sensitivity
-        euler.y -= deltaX * 0.003;
-        euler.x -= deltaY * 0.003;
+        euler.y -= deltaX * 0.0045;
+        euler.x -= deltaY * 0.0045;
         euler.x = Math.max(-PI_2, Math.min(PI_2, euler.x));
         
         playerObject.quaternion.setFromEuler(euler);
