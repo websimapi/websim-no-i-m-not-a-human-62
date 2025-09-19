@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
+import { PointerLockControls } from 'three/addons/PointerLockControls.js';
 import { Pathfinding } from 'pathfinding';
 
 let scene, camera, renderer, controls;
@@ -12,6 +12,7 @@ let animationFrameId = null;
 const container = document.getElementById('scene-3d-container');
 const canvas = document.getElementById('scene-3d-canvas');
 const instructions = document.getElementById('scene-3d-instructions');
+const joystickContainer = document.getElementById('joystick-container');
 
 // Mobile controls state
 let touchStartX = 0;
@@ -20,6 +21,7 @@ let touchStartTime = 0;
 let isDragging = false;
 const euler = new THREE.Euler(0, 0, 0, 'YXZ');
 const PI_2 = Math.PI / 2;
+let joystick = null;
 
 const isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
 
@@ -32,12 +34,57 @@ let currentPath = null;
 let tapIndicator;
 let indicatorTimeout;
 
-function setupEventListeners() {
+async function importNippleJS() {
+    if (typeof nipplejs === 'undefined') {
+        return new Promise((resolve, reject) => {
+            const script = document.createElement('script');
+            script.src = 'https://cdn.jsdelivr.net/npm/nipplejs@0.10.1/dist/nipplejs.min.js';
+            script.onload = () => resolve(window.nipplejs);
+            script.onerror = reject;
+            document.head.appendChild(script);
+        });
+    }
+    return window.nipplejs;
+}
+
+async function setupEventListeners() {
     if (isMobile) {
-        instructions.querySelector('div').textContent = 'Tap to move, Drag to look';
+        instructions.querySelector('div').textContent = 'Drag joystick to move, Drag screen to look';
         container.addEventListener('touchstart', onTouchStart, { passive: false });
         container.addEventListener('touchmove', onTouchMove, { passive: false });
         container.addEventListener('touchend', onTouchEnd);
+        
+        try {
+            const nipplejs = await importNippleJS();
+            joystickContainer.style.display = 'block';
+            joystick = nipplejs.create({
+                zone: joystickContainer,
+                mode: 'static',
+                position: { left: '50%', top: '50%' },
+                color: 'white'
+            });
+
+            joystick.on('move', (evt, data) => {
+                if (data.direction) {
+                    moveForward = data.direction.y === 'up';
+                    moveBackward = data.direction.y === 'down';
+                    moveLeft = data.direction.x === 'left';
+                    moveRight = data.direction.x === 'right';
+                }
+            });
+
+            joystick.on('end', () => {
+                moveForward = false;
+                moveBackward = false;
+                moveLeft = false;
+                moveRight = false;
+            });
+
+        } catch (error) {
+            console.error('Failed to load joystick library:', error);
+            // Fallback or error message
+            instructions.querySelector('div').textContent = 'Error loading controls';
+        }
     } else {
         container.addEventListener('click', () => {
             if (controls) controls.lock();
@@ -61,6 +108,11 @@ function removeEventListeners() {
         container.removeEventListener('touchstart', onTouchStart);
         container.removeEventListener('touchmove', onTouchMove);
         container.removeEventListener('touchend', onTouchEnd);
+        if (joystick) {
+            joystick.destroy();
+            joystick = null;
+            joystickContainer.style.display = 'none';
+        }
     } else {
         document.removeEventListener('keydown', onKeyDown);
         document.removeEventListener('keyup', onKeyUp);
@@ -71,6 +123,13 @@ function removeEventListeners() {
 function onTouchStart(event) {
     event.preventDefault();
     if (!controls) return;
+    
+    // Ignore touches on the joystick
+    if (event.target.closest('#joystick-container')) {
+        isDragging = false;
+        return;
+    }
+
     const touch = event.touches[0];
     touchStartX = touch.clientX;
     touchStartY = touch.clientY;
@@ -81,6 +140,8 @@ function onTouchStart(event) {
 function onTouchMove(event) {
     event.preventDefault();
     if (!controls || event.touches.length === 0) return;
+    if (event.target.closest('#joystick-container')) return;
+
     isDragging = true;
     const touch = event.touches[0];
     const deltaX = touch.clientX - touchStartX;
@@ -101,41 +162,7 @@ function onTouchMove(event) {
 function onTouchEnd(event) {
     event.preventDefault();
     if (!controls) return;
-    const touchDuration = performance.now() - touchStartTime;
-    if (!isDragging && touchDuration < 250) {
-        // It's a tap - use raycaster to set destination
-        const touch = event.changedTouches[0];
-        const mouse = new THREE.Vector2();
-        mouse.x = (touch.clientX / window.innerWidth) * 2 - 1;
-        mouse.y = - (touch.clientY / window.innerHeight) * 2 + 1;
-
-        raycaster.setFromCamera(mouse, camera);
-        const intersects = raycaster.intersectObject(navMesh); // Raycast against the navmesh
-
-        if (intersects.length > 0) {
-            const targetPosition = intersects[0].point;
-            const player = controls.getObject();
-
-            playerNavMeshGroup = pathfinder.getGroup('NAVMESH', player.position);
-            const targetGroup = pathfinder.getGroup('NAVMESH', targetPosition);
-
-            if (playerNavMeshGroup === targetGroup) { // Check if path is possible
-                 currentPath = pathfinder.findPath(player.position, targetPosition, 'NAVMESH', playerNavMeshGroup);
-                 if (currentPath && currentPath.length > 0) {
-                    // Show tap indicator
-                    tapIndicator.position.copy(targetPosition);
-                    tapIndicator.position.y += 0.05; // Prevent z-fighting
-                    tapIndicator.visible = true;
-                    if (indicatorTimeout) clearTimeout(indicatorTimeout);
-                    indicatorTimeout = setTimeout(() => {
-                        tapIndicator.visible = false;
-                    }, 500);
-                 } else {
-                    currentPath = null;
-                 }
-            }
-        }
-    }
+    // No tap-to-move logic anymore
     isDragging = false;
 }
 
@@ -193,56 +220,31 @@ function animate() {
 
     const time = performance.now();
     const delta = (time - prevTime) / 1000;
+    
+    if (!controls) { // Guard against missing controls
+        prevTime = time;
+        renderer.render(scene, camera);
+        return;
+    }
+
     const player = controls.getObject();
 
-    if (isMobile && currentPath && currentPath.length > 0) {
-        const targetNode = currentPath[0];
-        const directionToNode = targetNode.clone().sub(player.position);
-        directionToNode.y = 0; // Move along the horizontal plane
+    velocity.x -= velocity.x * 10.0 * delta;
+    velocity.z -= velocity.z * 10.0 * delta;
 
-        const distance = directionToNode.length();
-        const moveSpeed = 4.0;
-        const moveDistance = Math.min(distance, moveSpeed * delta);
+    direction.z = Number(moveForward) - Number(moveBackward);
+    direction.x = Number(moveRight) - Number(moveLeft);
+    direction.normalize(); 
 
-        if (distance < 0.1) {
-            // Reached the node, move to the next one
-            currentPath.shift();
-            if (currentPath.length === 0) {
-                currentPath = null; // Path complete
-                if (tapIndicator) tapIndicator.visible = false;
-            }
-        } else {
-            // Move towards the current node
-            player.position.add(directionToNode.normalize().multiplyScalar(moveDistance));
+    const speed = isMobile ? 40.0 : 40.0;
+    if (moveForward || moveBackward) velocity.z -= direction.z * speed * delta;
+    if (moveLeft || moveRight) velocity.x -= direction.x * speed * delta;
 
-            // Smoothly rotate player to face movement direction
-            const targetQuaternion = new THREE.Quaternion();
-            const targetRotationMatrix = new THREE.Matrix4();
-            targetRotationMatrix.lookAt(player.position.clone().add(directionToNode), player.position, player.up);
-            targetQuaternion.setFromRotationMatrix(targetRotationMatrix);
-
-            player.quaternion.slerp(targetQuaternion, 0.1);
-        }
-
-    } else if (!isMobile) { // Desktop controls
-        velocity.x -= velocity.x * 10.0 * delta;
-        velocity.z -= velocity.z * 10.0 * delta;
-
-        direction.z = Number(moveForward) - Number(moveBackward);
-        direction.x = Number(moveRight) - Number(moveLeft);
-        direction.normalize(); 
-
-        if (moveForward || moveBackward) velocity.z -= direction.z * 40.0 * delta;
-        if (moveLeft || moveRight) velocity.x -= direction.x * 40.0 * delta;
-
-        controls.moveRight(-velocity.x * delta);
-        controls.moveForward(-velocity.z * delta);
-    }
+    controls.moveRight(-velocity.x * delta);
+    controls.moveForward(-velocity.z * delta);
     
     // prevent flying up/down
-    if (controls) {
-        player.position.y = 1.7; 
-    }
+    player.position.y = 1.7; 
 
     prevTime = time;
 
@@ -300,13 +302,13 @@ function createCollisionBoxes(object) {
 
 export function initScene3D() {
     container.style.display = 'block';
-    
-    pathfinder = new Pathfinding();
 
-    // Scene
+    // Scene setup MUST come first
     scene = new THREE.Scene();
     scene.background = new THREE.Color(0x111111);
     scene.fog = new THREE.Fog(0x111111, 0, 75);
+    
+    pathfinder = new Pathfinding();
 
     // Camera
     camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
@@ -323,7 +325,9 @@ export function initScene3D() {
         controls = new DesktopControls(camera, document.body);
         camera.position.y = 1.7; // set initial height for camera inside PLC object
     }
-    scene.add(controls.getObject());
+    if (controls && controls.getObject()) {
+        scene.add(controls.getObject());
+    }
 
 
     // Renderer
@@ -545,7 +549,7 @@ export function initScene3D() {
     scene.add(navMesh);
 
 
-    // Tap indicator for mobile
+    // Tap indicator for mobile (kept in case we re-enable it, but won't be used with joystick)
     if (isMobile) {
         const indicatorGeometry = new THREE.RingGeometry(0.3, 0.4, 32);
         indicatorGeometry.rotateX(-Math.PI / 2);
