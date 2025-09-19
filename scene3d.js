@@ -17,6 +17,7 @@ let touchStartX = 0;
 let touchStartY = 0;
 let touchStartTime = 0;
 let isDragging = false;
+let touchMovedDist = 0; const DRAG_THRESHOLD = 10; // px to qualify as drag
 const euler = new THREE.Euler(0, 0, 0, 'YXZ');
 const PI_2 = Math.PI / 2;
 
@@ -81,6 +82,7 @@ function onTouchStart(event) {
     touchStartY = touch.clientY;
     touchStartTime = performance.now();
     isDragging = false;
+    touchMovedDist = 0;
 }
 
 function onTouchMove(event) {
@@ -90,6 +92,8 @@ function onTouchMove(event) {
     const touch = event.touches[0];
     const deltaX = touch.clientX - touchStartX;
     const deltaY = touch.clientY - touchStartY;
+    touchMovedDist += Math.hypot(deltaX, deltaY);
+    if (!isDragging && touchMovedDist > DRAG_THRESHOLD) isDragging = true;
     touchStartX = touch.clientX;
     touchStartY = touch.clientY;
 
@@ -107,7 +111,7 @@ function onTouchEnd(event) {
     event.preventDefault();
     if (!controls) return;
     const touchDuration = performance.now() - touchStartTime;
-    if (!isDragging && touchDuration < 250) {
+    if (!isDragging && touchMovedDist <= DRAG_THRESHOLD && touchDuration < 250) {
         // It's a tap - use raycaster to set destination
         const touch = event.changedTouches[0];
         const mouse = new THREE.Vector2();
@@ -115,7 +119,7 @@ function onTouchEnd(event) {
         mouse.y = - (touch.clientY / window.innerHeight) * 2 + 1;
 
         raycaster.setFromCamera(mouse, camera);
-        const intersects = raycaster.intersectObjects(walkableObjects);
+        const intersects = raycaster.intersectObjects(walkableObjects, true);
 
         if (intersects.length > 0) {
             const intersectionPoint = intersects[0].point;
@@ -229,7 +233,7 @@ function animate() {
 
             if (!checkCollision(nextPosition)) {
                 // Smooth yaw-only turn toward target, then move directly
-                const desiredYaw = Math.atan2(targetPosition.x - player.position.x, -(targetPosition.z - player.position.z));
+                const desiredYaw = Math.atan2(targetPosition.x - player.position.x, targetPosition.z - player.position.z);
                 euler.setFromQuaternion(player.quaternion, 'YXZ');
                 let yawDiff = ((desiredYaw - euler.y + Math.PI) % (Math.PI * 2)) - Math.PI;
                 const yawStep = THREE.MathUtils.clamp(yawDiff, -delta * 3.5, delta * 3.5);
