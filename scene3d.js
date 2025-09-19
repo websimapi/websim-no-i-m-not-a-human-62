@@ -121,13 +121,9 @@ function onTouchEnd(event) {
             const intersectionPoint = intersects[0].point;
             const player = controls.getObject();
 
-            // FIX: Only set a new target if it's a meaningful distance away from both
-            // the player's current position AND the previous target.
-            // This prevents spinning when tapping near the player's current position or destination.
-            const distToPlayer = player.position.distanceTo(intersectionPoint);
-            const distToTarget = targetPosition ? targetPosition.distanceTo(intersectionPoint) : Infinity;
-
-            if (distToPlayer > 0.8 && distToTarget > 0.8) {
+            // FIX: Only set a new target if it's a meaningful distance away
+            // This prevents spinning when tapping near the player's current position.
+            if (player.position.distanceTo(intersectionPoint) > 0.6) {
                 targetPosition = intersectionPoint;
                 isMovingToTarget = true;
                 
@@ -211,11 +207,19 @@ function animate() {
     if (isMobile && isMovingToTarget && targetPosition) {
         const distance = player.position.distanceTo(targetPosition);
 
-        if (distance < 0.8) { // Increased threshold to stop movement sooner.
+        if (distance < 0.5) { // Close enough to target
             isMovingToTarget = false;
+            targetPosition = null;
+            if (tapIndicator) tapIndicator.visible = false;
         } else {
-            const moveSpeed = 4.0;
-            const moveDistance = moveSpeed * delta;
+            // Decelerate as we get closer to the target to prevent overshooting.
+            const maxSpeed = 4.0;
+            const decelerationDistance = 2.0;
+            const moveSpeed = distance < decelerationDistance 
+                ? maxSpeed * (distance / decelerationDistance) 
+                : maxSpeed;
+            
+            const moveDistance = Math.max(0.1, moveSpeed) * delta; // Ensure a minimum speed to prevent getting stuck
             
             // Calculate potential next position
             const directionToTarget = targetPosition.clone().sub(player.position).normalize();
@@ -223,22 +227,19 @@ function animate() {
             const nextPosition = player.position.clone().add(potentialMove);
             nextPosition.y = 1.7; // Keep player on the ground plane for collision check
 
-            // Check for collisions before moving
             if (!checkCollision(nextPosition)) {
-                // No collision, proceed with movement
-                
-                // FIX: Only rotate if we are not too close to the target to avoid spinning.
-                if (distance > 1.0) {
-                    const lookAtTarget = new THREE.Vector3(targetPosition.x, player.position.y, targetPosition.z);
-                    const targetQuaternion = new THREE.Quaternion().setFromRotationMatrix(
-                        new THREE.Matrix4().lookAt(player.position, lookAtTarget, player.up)
-                    );
-                    player.quaternion.slerp(targetQuaternion, delta * 5.0);
-                }
-                controls.moveForward(moveDistance);
+                // Smooth yaw-only turn toward target, then move directly
+                const desiredYaw = Math.atan2(targetPosition.x - player.position.x, targetPosition.z - player.position.z);
+                euler.setFromQuaternion(player.quaternion, 'YXZ');
+                let yawDiff = ((desiredYaw - euler.y + Math.PI) % (Math.PI * 2)) - Math.PI;
+                const yawStep = THREE.MathUtils.clamp(yawDiff, -delta * 3.5, delta * 3.5);
+                euler.y += yawStep; euler.x = 0; // prevent pitch buildup
+                player.quaternion.setFromEuler(euler);
+
+                player.position.copy(nextPosition);
             } else {
-                // Collision detected, stop moving towards the target
                 isMovingToTarget = false;
+                if (tapIndicator) tapIndicator.visible = false;
             }
         }
     } else if (!isMobile) { // Desktop controls
