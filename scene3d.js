@@ -13,10 +13,10 @@ const canvas = document.getElementById('scene-3d-canvas');
 const instructions = document.getElementById('scene-3d-instructions');
 
 // Mobile controls state
-let touchStartX = 0;
-let touchStartY = 0;
+let touchStartX = 0, touchStartY = 0, touchPrevX = 0, touchPrevY = 0;
 let touchStartTime = 0;
 let isDragging = false;
+const DRAG_THRESHOLD = 10; // px before we consider it a drag
 const euler = new THREE.Euler(0, 0, 0, 'YXZ');
 const PI_2 = Math.PI / 2;
 
@@ -77,8 +77,8 @@ function onTouchStart(event) {
     event.preventDefault();
     if (!controls) return;
     const touch = event.touches[0];
-    touchStartX = touch.clientX;
-    touchStartY = touch.clientY;
+    touchStartX = touchPrevX = touch.clientX;
+    touchStartY = touchPrevY = touch.clientY;
     touchStartTime = performance.now();
     isDragging = false;
 }
@@ -86,12 +86,14 @@ function onTouchStart(event) {
 function onTouchMove(event) {
     event.preventDefault();
     if (!controls || event.touches.length === 0) return;
-    isDragging = true;
     const touch = event.touches[0];
-    const deltaX = touch.clientX - touchStartX;
-    const deltaY = touch.clientY - touchStartY;
-    touchStartX = touch.clientX;
-    touchStartY = touch.clientY;
+    const deltaX = touch.clientX - touchPrevX;
+    const deltaY = touch.clientY - touchPrevY;
+    const dxTotal = Math.abs(touch.clientX - touchStartX);
+    const dyTotal = Math.abs(touch.clientY - touchStartY);
+    isDragging = dxTotal > DRAG_THRESHOLD || dyTotal > DRAG_THRESHOLD;
+    touchPrevX = touch.clientX;
+    touchPrevY = touch.clientY;
 
     const yawObj = controls.getObject();
     const pitchObj = controls.pitchObject || null;
@@ -107,9 +109,12 @@ function onTouchEnd(event) {
     event.preventDefault();
     if (!controls) return;
     const touchDuration = performance.now() - touchStartTime;
-    if (!isDragging && touchDuration < 250) {
+    const touch = event.changedTouches[0];
+    const dxTotal = Math.abs(touch.clientX - touchStartX);
+    const dyTotal = Math.abs(touch.clientY - touchStartY);
+    const smallMove = dxTotal <= DRAG_THRESHOLD && dyTotal <= DRAG_THRESHOLD;
+    if (smallMove && touchDuration < 300) {
         // It's a tap - use raycaster to set destination
-        const touch = event.changedTouches[0];
         const mouse = new THREE.Vector2();
         mouse.x = (touch.clientX / window.innerWidth) * 2 - 1;
         mouse.y = - (touch.clientY / window.innerHeight) * 2 + 1;
