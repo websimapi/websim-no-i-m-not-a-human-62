@@ -702,17 +702,6 @@ h1 .not-word.pulse-red { animation: notPulse 1.2s ease; }
     opacity: 0;
 }
 
-#joystick-container {
-    position: absolute;
-    bottom: 20px;
-    left: 20px;
-    width: 150px;
-    height: 150px;
-    display: none; /* Hidden by default, shown for mobile */
-    opacity: 0.7;
-    z-index: 10;
-}
-
 @media (max-width: 768px) and (orientation: portrait) {
     #app {
         grid-template-columns: 1fr 2.5fr 1fr; /* Give center more space on portrait */
