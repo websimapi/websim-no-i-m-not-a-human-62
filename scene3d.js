@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
+import { Pathfinding } from 'pathfinding';
 
 let scene, camera, renderer, controls;
 let moveForward = false, moveBackward = false, moveLeft = false, moveRight = false;
@@ -13,29 +14,23 @@ const canvas = document.getElementById('scene-3d-canvas');
 const instructions = document.getElementById('scene-3d-instructions');
 
 // Mobile controls state
-let touchStartX = 0, touchStartY = 0, touchPrevX = 0, touchPrevY = 0;
+let touchStartX = 0;
+let touchStartY = 0;
 let touchStartTime = 0;
 let isDragging = false;
-const DRAG_THRESHOLD = 10; // px before we consider it a drag
 const euler = new THREE.Euler(0, 0, 0, 'YXZ');
 const PI_2 = Math.PI / 2;
 
 const isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
 
-// Tap-to-move state
+// Tap-to-move state using three-pathfinding
 let raycaster;
-let walkableObjects = [];
-let collisionObjects = [];
-let targetPosition = null;
-let isMovingToTarget = false;
+let pathfinder;
+let navMesh;
+let playerNavMeshGroup = -1;
+let currentPath = null;
 let tapIndicator;
 let indicatorTimeout;
-let collisionRaycaster;
-
-// Player collision state for mobile
-let playerBoundingBox;
-const playerSize = new THREE.Vector3(0.8, 1.7, 0.8); // width, height, depth
-let collisionObjectBoundingBoxes = [];
 
 function setupEventListeners() {
     if (isMobile) {
@@ -77,8 +72,8 @@ function onTouchStart(event) {
     event.preventDefault();
     if (!controls) return;
     const touch = event.touches[0];
-    touchStartX = touchPrevX = touch.clientX;
-    touchStartY = touchPrevY = touch.clientY;
+    touchStartX = touch.clientX;
+    touchStartY = touch.clientY;
     touchStartTime = performance.now();
     isDragging = false;
 }
@@ -86,60 +81,58 @@ function onTouchStart(event) {
 function onTouchMove(event) {
     event.preventDefault();
     if (!controls || event.touches.length === 0) return;
+    isDragging = true;
     const touch = event.touches[0];
-    const deltaX = touch.clientX - touchPrevX;
-    const deltaY = touch.clientY - touchPrevY;
-    const dxTotal = Math.abs(touch.clientX - touchStartX);
-    const dyTotal = Math.abs(touch.clientY - touchStartY);
-    isDragging = dxTotal > DRAG_THRESHOLD || dyTotal > DRAG_THRESHOLD;
-    touchPrevX = touch.clientX;
-    touchPrevY = touch.clientY;
+    const deltaX = touch.clientX - touchStartX;
+    const deltaY = touch.clientY - touchStartY;
+    touchStartX = touch.clientX;
+    touchStartY = touch.clientY;
 
-    const yawObj = controls.getObject();
-    const pitchObj = controls.pitchObject || null;
+    const playerObject = controls.getObject();
+    euler.setFromQuaternion(playerObject.quaternion);
 
-    // Yaw on the player (Y axis), Pitch on the camera (X axis)
-    yawObj.rotation.y -= deltaX * 0.003;
-    if (pitchObj) {
-        pitchObj.rotation.x = THREE.MathUtils.clamp(pitchObj.rotation.x - deltaY * 0.003, -PI_2, PI_2);
-    }
+    euler.y -= deltaX * 0.002;
+    euler.x -= deltaY * 0.002;
+    euler.x = Math.max(-PI_2, Math.min(PI_2, euler.x));
+
+    playerObject.quaternion.setFromEuler(euler);
 }
 
 function onTouchEnd(event) {
     event.preventDefault();
     if (!controls) return;
     const touchDuration = performance.now() - touchStartTime;
-    const touch = event.changedTouches[0];
-    const dxTotal = Math.abs(touch.clientX - touchStartX);
-    const dyTotal = Math.abs(touch.clientY - touchStartY);
-    const smallMove = dxTotal <= DRAG_THRESHOLD && dyTotal <= DRAG_THRESHOLD;
-    if (smallMove && touchDuration < 300) {
+    if (!isDragging && touchDuration < 250) {
         // It's a tap - use raycaster to set destination
+        const touch = event.changedTouches[0];
         const mouse = new THREE.Vector2();
         mouse.x = (touch.clientX / window.innerWidth) * 2 - 1;
         mouse.y = - (touch.clientY / window.innerHeight) * 2 + 1;
 
         raycaster.setFromCamera(mouse, camera);
-        const intersects = raycaster.intersectObjects(walkableObjects);
+        const intersects = raycaster.intersectObject(navMesh); // Raycast against the navmesh
 
         if (intersects.length > 0) {
-            const intersectionPoint = intersects[0].point;
+            const targetPosition = intersects[0].point;
             const player = controls.getObject();
 
-            // FIX: Only set a new target if it's a meaningful distance away
-            // This prevents spinning when tapping near the player's current position.
-            if (player.position.distanceTo(intersectionPoint) > 0.6) {
-                targetPosition = intersectionPoint;
-                isMovingToTarget = true;
-                
-                // Show tap indicator
-                tapIndicator.position.copy(targetPosition);
-                tapIndicator.position.y += 0.05; // Prevent z-fighting
-                tapIndicator.visible = true;
-                if (indicatorTimeout) clearTimeout(indicatorTimeout);
-                indicatorTimeout = setTimeout(() => {
-                    tapIndicator.visible = false;
-                }, 500);
+            playerNavMeshGroup = pathfinder.getGroup('NAVMESH', player.position);
+            const targetGroup = pathfinder.getGroup('NAVMESH', targetPosition);
+
+            if (playerNavMeshGroup === targetGroup) { // Check if path is possible
+                 currentPath = pathfinder.findPath(player.position, targetPosition, 'NAVMESH', playerNavMeshGroup);
+                 if (currentPath && currentPath.length > 0) {
+                    // Show tap indicator
+                    tapIndicator.position.copy(targetPosition);
+                    tapIndicator.position.y += 0.05; // Prevent z-fighting
+                    tapIndicator.visible = true;
+                    if (indicatorTimeout) clearTimeout(indicatorTimeout);
+                    indicatorTimeout = setTimeout(() => {
+                        tapIndicator.visible = false;
+                    }, 500);
+                 } else {
+                    currentPath = null;
+                 }
             }
         }
     }
@@ -189,16 +182,9 @@ function onKeyUp(event) {
 }
 
 function checkCollision(nextPosition) {
-    // Update player's bounding box to the potential next position
-    playerBoundingBox.setFromCenterAndSize(nextPosition, playerSize);
-
-    // Check for intersection with any of the static collision objects
-    for (const objectBox of collisionObjectBoundingBoxes) {
-        if (playerBoundingBox.intersectsBox(objectBox)) {
-            return true; // Collision detected
-        }
-    }
-    return false; // No collision
+    // This function is no longer needed for tap-to-move as pathfinding handles obstacles.
+    // It could be kept for potential future use with desktop keyboard movement if needed.
+    return false; 
 }
 
 
@@ -209,37 +195,35 @@ function animate() {
     const delta = (time - prevTime) / 1000;
     const player = controls.getObject();
 
-    if (isMobile && isMovingToTarget && targetPosition) {
-        const distance = player.position.distanceTo(targetPosition);
+    if (isMobile && currentPath && currentPath.length > 0) {
+        const targetNode = currentPath[0];
+        const directionToNode = targetNode.clone().sub(player.position);
+        directionToNode.y = 0; // Move along the horizontal plane
 
-        if (distance < 0.5) { // Close enough to target
-            isMovingToTarget = false;
-            targetPosition = null;
-            if (tapIndicator) tapIndicator.visible = false;
-        } else {
-            const maxSpeed = 4.0;
-            const decelerationDistance = 2.0;
-            const moveSpeed = distance < decelerationDistance 
-                ? maxSpeed * (distance / decelerationDistance) 
-                : maxSpeed;
-            const moveDistance = Math.max(0.1, moveSpeed) * delta;
+        const distance = directionToNode.length();
+        const moveSpeed = 4.0;
+        const moveDistance = Math.min(distance, moveSpeed * delta);
 
-            const desiredYaw = Math.atan2(targetPosition.x - player.position.x, -(targetPosition.z - player.position.z));
-            let yawDiff = ((desiredYaw - player.rotation.y + Math.PI) % (Math.PI * 2)) - Math.PI;
-            const yawStep = THREE.MathUtils.clamp(yawDiff, -delta * 3.5, delta * 3.5);
-            player.rotation.y += yawStep; // smooth yaw only
-
-            const dir = new THREE.Vector3(0, 0, -1).applyEuler(new THREE.Euler(0, player.rotation.y, 0));
-            const nextPosition = player.position.clone().add(dir.multiplyScalar(moveDistance));
-            nextPosition.y = 1.7;
-
-            if (!checkCollision(nextPosition)) {
-                player.position.copy(nextPosition);
-            } else {
-                isMovingToTarget = false;
+        if (distance < 0.1) {
+            // Reached the node, move to the next one
+            currentPath.shift();
+            if (currentPath.length === 0) {
+                currentPath = null; // Path complete
                 if (tapIndicator) tapIndicator.visible = false;
             }
+        } else {
+            // Move towards the current node
+            player.position.add(directionToNode.normalize().multiplyScalar(moveDistance));
+
+            // Smoothly rotate player to face movement direction
+            const targetQuaternion = new THREE.Quaternion();
+            const targetRotationMatrix = new THREE.Matrix4();
+            targetRotationMatrix.lookAt(player.position.clone().add(directionToNode), player.position, player.up);
+            targetQuaternion.setFromRotationMatrix(targetRotationMatrix);
+
+            player.quaternion.slerp(targetQuaternion, 0.1);
         }
+
     } else if (!isMobile) { // Desktop controls
         velocity.x -= velocity.x * 10.0 * delta;
         velocity.z -= velocity.z * 10.0 * delta;
@@ -285,54 +269,39 @@ class DesktopControls {
     addEventListener(event, callback) {
         this.controls.addEventListener(event, callback);
     }
-    dispose() {
-        this.controls.dispose();
-    }
+    dispose() { /* No-op */ }
 }
 
 // A wrapper for our custom touch controls
 class MobileControls {
     constructor(camera) {
-        this.yawObject = new THREE.Object3D();
-        this.pitchObject = new THREE.Object3D();
-        this.pitchObject.add(camera);
-        this.yawObject.add(this.pitchObject);
+        this.playerObject = new THREE.Object3D();
+        this.playerObject.add(camera);
     }
     getObject() {
-        return this.yawObject;
+        return this.playerObject;
     }
     moveForward(distance) {
+        // This moves the object along its local Z axis
         const forward = new THREE.Vector3(0, 0, -1);
-        forward.applyEuler(new THREE.Euler(0, this.yawObject.rotation.y, 0));
-        this.yawObject.position.add(forward.multiplyScalar(distance));
+        forward.applyQuaternion(this.playerObject.quaternion);
+        this.playerObject.position.add(forward.multiplyScalar(distance));
     }
     moveRight(distance) {
-        const right = new THREE.Vector3(1, 0, 0);
-        right.applyEuler(new THREE.Euler(0, this.yawObject.rotation.y, 0));
-        this.yawObject.position.add(right.multiplyScalar(distance));
+        this.playerObject.translateX(distance);
     }
     dispose() { /* No-op */ }
 }
 
 function createCollisionBoxes(object) {
-    object.traverse((child) => {
-        if (child.isMesh) {
-            // Ensure the child's matrix is up-to-date
-            child.updateWorldMatrix(true, false);
-            const box = new THREE.Box3().setFromObject(child);
-            collisionObjectBoundingBoxes.push(box);
-        }
-    });
+    // No longer needed for pathfinding
 }
 
 
 export function initScene3D() {
     container.style.display = 'block';
     
-    // Reset collision arrays
-    collisionObjects = [];
-    collisionObjectBoundingBoxes = [];
-    walkableObjects = [];
+    pathfinder = new Pathfinding();
 
     // Scene
     scene = new THREE.Scene();
@@ -348,10 +317,6 @@ export function initScene3D() {
         const player = controls.getObject();
         player.position.set(0, 1.7, 5);
         
-        // Initialize player bounding box for collision detection
-        playerBoundingBox = new THREE.Box3();
-        playerBoundingBox.setFromCenterAndSize(player.position, playerSize);
-
         if (instructions) instructions.classList.remove('hidden');
         raycaster = new THREE.Raycaster();
     } else {
@@ -397,7 +362,7 @@ export function initScene3D() {
     const roofMaterial = new THREE.MeshStandardMaterial({ map: barnRoofTexture });
     const windowMaterial = new THREE.MeshBasicMaterial({ color: 0x050505 });
 
-    // Ground
+    // Ground (visual only)
     const ground = new THREE.Mesh(
         new THREE.PlaneGeometry(200, 200),
         new THREE.MeshStandardMaterial({ map: groundTexture, roughness: 0.8, metalness: 0.2 })
@@ -405,7 +370,7 @@ export function initScene3D() {
     ground.rotation.x = -Math.PI / 2;
     ground.receiveShadow = true;
     scene.add(ground);
-    walkableObjects.push(ground);
+
 
     // Barn
     const barnGroup = new THREE.Group();
@@ -537,12 +502,48 @@ export function initScene3D() {
 
     barnGroup.position.z = -15;
     scene.add(barnGroup);
-    collisionObjects.push(barnGroup);
     
-    // Generate bounding boxes for all meshes in the collision objects
-    if(isMobile) {
-        createCollisionBoxes(barnGroup);
+    // Navigation Mesh Generation
+    const navMeshGeometry = new THREE.PlaneGeometry(200, 200, 40, 40);
+    const navMeshMatrix = new THREE.Matrix4();
+    navMeshMatrix.makeRotationX(-Math.PI / 2);
+    navMeshGeometry.applyMatrix4(navMeshMatrix);
+
+    const barnBox = new THREE.Box3().setFromObject(barnGroup);
+    barnBox.min.y = -Infinity; // Make sure it culls through the plane
+    barnBox.max.y = Infinity;
+
+    const navPositions = navMeshGeometry.attributes.position;
+    const navVerts = [];
+    for (let i = 0; i < navPositions.count; i++) {
+        navVerts.push(new THREE.Vector3().fromBufferAttribute(navPositions, i));
     }
+
+    const culledIndices = [];
+    for (let i = 0; i < navVerts.length; i += 3) {
+        const v1 = navVerts[i];
+        const v2 = navVerts[i + 1];
+        const v3 = navVerts[i + 2];
+        const faceCenter = new THREE.Vector3().add(v1).add(v2).add(v3).divideScalar(3);
+        if (barnBox.containsPoint(faceCenter)) {
+            culledIndices.push(i, i + 1, i + 2);
+        }
+    }
+
+    navMeshGeometry.setIndex(
+      navMeshGeometry.index.array.filter((_, i) => !culledIndices.includes(i))
+    );
+    navMeshGeometry.deleteAttribute('normal');
+    navMeshGeometry.deleteAttribute('uv');
+    navMeshGeometry.computeVertexNormals();
+    
+    const navZone = Pathfinding.createZone(navMeshGeometry);
+    pathfinder.setZoneData('NAVMESH', navZone);
+    
+    navMesh = new THREE.Mesh(navMeshGeometry, new THREE.MeshBasicMaterial({ color: 0xff0000, wireframe: true }));
+    navMesh.visible = false; // Set to true for debugging
+    scene.add(navMesh);
+
 
     // Tap indicator for mobile
     if (isMobile) {
