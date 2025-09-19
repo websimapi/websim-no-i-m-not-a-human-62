@@ -32,6 +32,11 @@ let tapIndicator;
 let indicatorTimeout;
 let collisionRaycaster;
 
+// Player collision state for mobile
+let playerBoundingBox;
+const playerSize = new THREE.Vector3(0.8, 1.7, 0.8); // width, height, depth
+let collisionObjectBoundingBoxes = [];
+
 function setupEventListeners() {
     if (isMobile) {
         instructions.querySelector('div').textContent = 'Tap to move, Drag to look';
@@ -130,9 +135,6 @@ function onTouchEnd(event) {
                 indicatorTimeout = setTimeout(() => {
                     tapIndicator.visible = false;
                 }, 500);
-            } else {
-                // If tap is too close, stop moving.
-                isMovingToTarget = false;
             }
         }
     }
@@ -181,29 +183,19 @@ function onKeyUp(event) {
     }
 }
 
-function checkCollision(player, direction) {
-    const playerPosition = player.position;
-    const right = new THREE.Vector3().crossVectors(player.up, direction).normalize();
-    const playerWidth = 0.4; // The radius of our character collision shape
-    const collisionDistance = 0.6; // How close we can get to a wall
+function checkCollision(nextPosition) {
+    // Update player's bounding box to the potential next position
+    playerBoundingBox.setFromCenterAndSize(nextPosition, playerSize);
 
-    const rayOrigins = [
-        playerPosition, // Center
-        playerPosition.clone().add(right.clone().multiplyScalar(playerWidth)),  // Right shoulder
-        playerPosition.clone().add(right.clone().multiplyScalar(-playerWidth)), // Left shoulder
-    ];
-
-    for (const origin of rayOrigins) {
-        collisionRaycaster.set(origin, direction);
-        const collisions = collisionRaycaster.intersectObjects(collisionObjects, true);
-
-        if (collisions.length > 0 && collisions[0].distance < collisionDistance) {
+    // Check for intersection with any of the static collision objects
+    for (const objectBox of collisionObjectBoundingBoxes) {
+        if (playerBoundingBox.intersectsBox(objectBox)) {
             return true; // Collision detected
         }
     }
-
     return false; // No collision
 }
+
 
 function animate() {
     animationFrameId = requestAnimationFrame(animate);
@@ -218,27 +210,27 @@ function animate() {
         if (distance < 0.5) { // Close enough to target
             isMovingToTarget = false;
         } else {
-            const directionToTarget = targetPosition.clone().sub(player.position);
-            directionToTarget.y = 0; // Move along XZ plane
-            directionToTarget.normalize();
+            const moveSpeed = 4.0;
+            const moveDistance = moveSpeed * delta;
             
-            // New collision detection logic
-            if (checkCollision(player, directionToTarget)) {
-                isMovingToTarget = false; // Stop if an obstacle is too close
-            } else {
-                // Smoothly rotate player to face the target direction
-                const lookAtTarget = new THREE.Vector3(targetPosition.x, player.position.y, targetPosition.z);
-                // Create a matrix that looks at the target
-                const m = new THREE.Matrix4();
-                m.lookAt(player.position, lookAtTarget, player.up);
-                // Create a quaternion from that matrix
-                const targetQuaternion = new THREE.Quaternion().setFromRotationMatrix(m);
-                // Slerp to the target quaternion
-                player.quaternion.slerp(targetQuaternion, delta * 5.0);
+            // Calculate potential next position
+            const directionToTarget = targetPosition.clone().sub(player.position).normalize();
+            const potentialMove = directionToTarget.multiplyScalar(moveDistance);
+            const nextPosition = player.position.clone().add(potentialMove);
+            nextPosition.y = 1.7; // Keep player on the ground plane for collision check
 
-                // Move forward
-                const moveSpeed = 4.0;
-                controls.moveForward(moveSpeed * delta);
+            // Check for collisions before moving
+            if (!checkCollision(nextPosition)) {
+                // No collision, proceed with movement
+                const lookAtTarget = new THREE.Vector3(targetPosition.x, player.position.y, targetPosition.z);
+                const targetQuaternion = new THREE.Quaternion().setFromRotationMatrix(
+                    new THREE.Matrix4().lookAt(player.position, lookAtTarget, player.up)
+                );
+                player.quaternion.slerp(targetQuaternion, delta * 5.0);
+                controls.moveForward(moveDistance);
+            } else {
+                // Collision detected, stop moving towards the target
+                isMovingToTarget = false;
             }
         }
     } else if (!isMobile) { // Desktop controls
@@ -312,8 +304,25 @@ class MobileControls {
     dispose() { /* No-op */ }
 }
 
+function createCollisionBoxes(object) {
+    object.traverse((child) => {
+        if (child.isMesh) {
+            // Ensure the child's matrix is up-to-date
+            child.updateWorldMatrix(true, false);
+            const box = new THREE.Box3().setFromObject(child);
+            collisionObjectBoundingBoxes.push(box);
+        }
+    });
+}
+
+
 export function initScene3D() {
     container.style.display = 'block';
+    
+    // Reset collision arrays
+    collisionObjects = [];
+    collisionObjectBoundingBoxes = [];
+    walkableObjects = [];
 
     // Scene
     scene = new THREE.Scene();
@@ -326,11 +335,15 @@ export function initScene3D() {
     // Controls - conditional initialization
     if (isMobile) {
         controls = new MobileControls(camera);
-        controls.getObject().position.set(0, 1.7, 5);
+        const player = controls.getObject();
+        player.position.set(0, 1.7, 5);
+        
+        // Initialize player bounding box for collision detection
+        playerBoundingBox = new THREE.Box3();
+        playerBoundingBox.setFromCenterAndSize(player.position, playerSize);
+
         if (instructions) instructions.classList.remove('hidden');
-        // Initialize raycasters for tap-to-move
         raycaster = new THREE.Raycaster();
-        collisionRaycaster = new THREE.Raycaster();
     } else {
         controls = new DesktopControls(camera, document.body);
         camera.position.y = 1.7; // set initial height for camera inside PLC object
@@ -515,6 +528,11 @@ export function initScene3D() {
     barnGroup.position.z = -15;
     scene.add(barnGroup);
     collisionObjects.push(barnGroup);
+    
+    // Generate bounding boxes for all meshes in the collision objects
+    if(isMobile) {
+        createCollisionBoxes(barnGroup);
+    }
 
     // Tap indicator for mobile
     if (isMobile) {
