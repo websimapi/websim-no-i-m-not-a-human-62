@@ -229,7 +229,7 @@ function animate() {
 
             if (!checkCollision(nextPosition)) {
                 // Smooth yaw-only turn toward target, then move directly
-                const desiredYaw = Math.atan2(targetPosition.x - player.position.x, targetPosition.z - player.position.z);
+                const desiredYaw = Math.atan2(targetPosition.x - player.position.x, -(targetPosition.z - player.position.z));
                 euler.setFromQuaternion(player.quaternion, 'YXZ');
                 let yawDiff = ((desiredYaw - euler.y + Math.PI) % (Math.PI * 2)) - Math.PI;
                 const yawStep = THREE.MathUtils.clamp(yawDiff, -delta * 3.5, delta * 3.5);
