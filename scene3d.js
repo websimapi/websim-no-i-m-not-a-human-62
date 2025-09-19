@@ -8,6 +8,7 @@ const velocity = new THREE.Vector3();
 const direction = new THREE.Vector3();
 let prevTime = performance.now();
 let animationFrameId = null;
+let isInitializing = false;
 
 const container = document.getElementById('scene-3d-container');
 const canvas = document.getElementById('scene-3d-canvas');
@@ -300,6 +301,9 @@ function createCollisionBoxes(object) {
 
 
 export function initScene3D() {
+    if (isInitializing) return;
+    isInitializing = true;
+
     container.style.display = 'block';
     
     pathfinder = new Pathfinding();
@@ -317,12 +321,14 @@ export function initScene3D() {
         controls = new MobileControls(camera);
         const player = controls.getObject();
         player.position.set(0, 1.7, 5);
+        scene.add(player); // Add the player object to the scene for mobile
         
         if (instructions) instructions.classList.remove('hidden');
         raycaster = new THREE.Raycaster();
     } else {
         controls = new DesktopControls(camera, document.body);
         camera.position.y = 1.7; // set initial height for camera inside PLC object
+        scene.add(controls.getObject());
     }
     scene.add(controls.getObject());
 
@@ -561,6 +567,7 @@ export function initScene3D() {
     prevTime = performance.now();
     animate();
     window.addEventListener('resize', onWindowResize);
+    isInitializing = false;
 }
 
 function onWindowResize() {
