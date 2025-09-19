@@ -17,7 +17,6 @@ let touchStartX = 0;
 let touchStartY = 0;
 let touchStartTime = 0;
 let isDragging = false;
-let touchMovedDist = 0; const DRAG_THRESHOLD = 10; // px to qualify as drag
 const euler = new THREE.Euler(0, 0, 0, 'YXZ');
 const PI_2 = Math.PI / 2;
 
@@ -82,7 +81,6 @@ function onTouchStart(event) {
     touchStartY = touch.clientY;
     touchStartTime = performance.now();
     isDragging = false;
-    touchMovedDist = 0;
 }
 
 function onTouchMove(event) {
@@ -92,26 +90,24 @@ function onTouchMove(event) {
     const touch = event.touches[0];
     const deltaX = touch.clientX - touchStartX;
     const deltaY = touch.clientY - touchStartY;
-    touchMovedDist += Math.hypot(deltaX, deltaY);
-    if (!isDragging && touchMovedDist > DRAG_THRESHOLD) isDragging = true;
     touchStartX = touch.clientX;
     touchStartY = touch.clientY;
 
-    const playerObject = controls.getObject();
-    euler.setFromQuaternion(playerObject.quaternion);
+    const yawObj = controls.getObject();
+    const pitchObj = controls.pitchObject || null;
 
-    euler.y -= deltaX * 0.002;
-    euler.x -= deltaY * 0.002;
-    euler.x = Math.max(-PI_2, Math.min(PI_2, euler.x));
-
-    playerObject.quaternion.setFromEuler(euler);
+    // Yaw on the player (Y axis), Pitch on the camera (X axis)
+    yawObj.rotation.y -= deltaX * 0.003;
+    if (pitchObj) {
+        pitchObj.rotation.x = THREE.MathUtils.clamp(pitchObj.rotation.x - deltaY * 0.003, -PI_2, PI_2);
+    }
 }
 
 function onTouchEnd(event) {
     event.preventDefault();
     if (!controls) return;
     const touchDuration = performance.now() - touchStartTime;
-    if (!isDragging && touchMovedDist <= DRAG_THRESHOLD && touchDuration < 250) {
+    if (!isDragging && touchDuration < 250) {
         // It's a tap - use raycaster to set destination
         const touch = event.changedTouches[0];
         const mouse = new THREE.Vector2();
@@ -119,7 +115,7 @@ function onTouchEnd(event) {
         mouse.y = - (touch.clientY / window.innerHeight) * 2 + 1;
 
         raycaster.setFromCamera(mouse, camera);
-        const intersects = raycaster.intersectObjects(walkableObjects, true);
+        const intersects = raycaster.intersectObjects(walkableObjects);
 
         if (intersects.length > 0) {
             const intersectionPoint = intersects[0].point;
@@ -216,30 +212,23 @@ function animate() {
             targetPosition = null;
             if (tapIndicator) tapIndicator.visible = false;
         } else {
-            // Decelerate as we get closer to the target to prevent overshooting.
             const maxSpeed = 4.0;
             const decelerationDistance = 2.0;
             const moveSpeed = distance < decelerationDistance 
                 ? maxSpeed * (distance / decelerationDistance) 
                 : maxSpeed;
-            
-            const moveDistance = Math.max(0.1, moveSpeed) * delta; // Ensure a minimum speed to prevent getting stuck
-            
-            // Calculate potential next position
-            const directionToTarget = targetPosition.clone().sub(player.position).normalize();
-            const potentialMove = directionToTarget.multiplyScalar(moveDistance);
-            const nextPosition = player.position.clone().add(potentialMove);
-            nextPosition.y = 1.7; // Keep player on the ground plane for collision check
+            const moveDistance = Math.max(0.1, moveSpeed) * delta;
+
+            const desiredYaw = Math.atan2(targetPosition.x - player.position.x, -(targetPosition.z - player.position.z));
+            let yawDiff = ((desiredYaw - player.rotation.y + Math.PI) % (Math.PI * 2)) - Math.PI;
+            const yawStep = THREE.MathUtils.clamp(yawDiff, -delta * 3.5, delta * 3.5);
+            player.rotation.y += yawStep; // smooth yaw only
+
+            const dir = new THREE.Vector3(0, 0, -1).applyEuler(new THREE.Euler(0, player.rotation.y, 0));
+            const nextPosition = player.position.clone().add(dir.multiplyScalar(moveDistance));
+            nextPosition.y = 1.7;
 
             if (!checkCollision(nextPosition)) {
-                // Smooth yaw-only turn toward target, then move directly
-                const desiredYaw = Math.atan2(targetPosition.x - player.position.x, targetPosition.z - player.position.z);
-                euler.setFromQuaternion(player.quaternion, 'YXZ');
-                let yawDiff = ((desiredYaw - euler.y + Math.PI) % (Math.PI * 2)) - Math.PI;
-                const yawStep = THREE.MathUtils.clamp(yawDiff, -delta * 3.5, delta * 3.5);
-                euler.y += yawStep; euler.x = 0; // prevent pitch buildup
-                player.quaternion.setFromEuler(euler);
-
                 player.position.copy(nextPosition);
             } else {
                 isMovingToTarget = false;
@@ -299,20 +288,23 @@ class DesktopControls {
 // A wrapper for our custom touch controls
 class MobileControls {
     constructor(camera) {
-        this.playerObject = new THREE.Object3D();
-        this.playerObject.add(camera);
+        this.yawObject = new THREE.Object3D();
+        this.pitchObject = new THREE.Object3D();
+        this.pitchObject.add(camera);
+        this.yawObject.add(this.pitchObject);
     }
     getObject() {
-        return this.playerObject;
+        return this.yawObject;
     }
     moveForward(distance) {
-        // This moves the object along its local Z axis
         const forward = new THREE.Vector3(0, 0, -1);
-        forward.applyQuaternion(this.playerObject.quaternion);
-        this.playerObject.position.add(forward.multiplyScalar(distance));
+        forward.applyEuler(new THREE.Euler(0, this.yawObject.rotation.y, 0));
+        this.yawObject.position.add(forward.multiplyScalar(distance));
     }
     moveRight(distance) {
-        this.playerObject.translateX(distance);
+        const right = new THREE.Vector3(1, 0, 0);
+        right.applyEuler(new THREE.Euler(0, this.yawObject.rotation.y, 0));
+        this.yawObject.position.add(right.multiplyScalar(distance));
     }
     dispose() { /* No-op */ }
 }

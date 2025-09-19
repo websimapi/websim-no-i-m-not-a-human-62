@@ -675,7 +675,6 @@ h1 .not-word.pulse-red { animation: notPulse 1.2s ease; }
     background: #000;
     display: none;
     cursor: pointer;
-    touch-action: none; /* prevent browser gestures from blocking drag-look */
 }
 
 #scene-3d-canvas {
